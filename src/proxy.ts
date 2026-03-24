@@ -5,7 +5,7 @@ import type { NextRequest } from "next/server";
 // Routes that require an authenticated session
 const PROTECTED_PATHS = ["/feed", "/profile", "/onboarding", "/saved"];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // Build the initial response — must be reconstructed if cookies are mutated
   let supabaseResponse = NextResponse.next({ request });
 
