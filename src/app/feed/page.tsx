@@ -5,8 +5,16 @@ import { FeedSidebar } from "@/components/feed/feed-sidebar";
 import { FeedControls } from "@/components/feed/feed-controls";
 import { OpportunityGrid } from "@/components/feed/opportunity-grid";
 import { OpportunityCardSkeleton } from "@/components/feed/opportunity-card";
+import { ProfileBanner } from "@/components/feed/profile-banner";
+import { TopPicksSection } from "@/components/feed/top-picks-section";
 import type { GridFilters } from "@/components/feed/opportunity-grid";
 import type { FeedFilters } from "@/components/layout/sidebar";
+import { calculateMatchScore } from "@/lib/matching/engine";
+import type { MatchResult } from "@/lib/matching/engine";
+import type { ScoredOpportunity } from "@/components/feed/top-picks-section";
+
+// Hardcoded test user — same as profile route
+const TEST_USER_ID = "test-user-00000000-0000-0000-0000-000000000001";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,8 +70,45 @@ async function getOpportunityCount(filters: GridFilters): Promise<number> {
   return prisma.opportunity.count({ where });
 }
 
+/**
+ * Fetch profile + run matching engine for all active opportunities.
+ * Returns null matchScores if the user has no profile yet.
+ */
+async function getMatchData(userId: string): Promise<{
+  hasProfile: boolean;
+  matchScores: Record<string, MatchResult> | null;
+  topPicks: ScoredOpportunity[];
+}> {
+  const [profile, opportunities] = await Promise.all([
+    prisma.investorProfile.findUnique({ where: { userId } }),
+    prisma.opportunity.findMany({
+      where: { status: "ACTIVE" },
+      include: { platform: true },
+    }),
+  ]);
+
+  if (!profile) {
+    return { hasProfile: false, matchScores: null, topPicks: [] };
+  }
+
+  const scored: ScoredOpportunity[] = opportunities
+    .map((opp) => ({ opportunity: opp, match: calculateMatchScore(profile, opp) }))
+    .sort((a, b) => b.match.score - a.match.score);
+
+  const matchScores: Record<string, MatchResult> = {};
+  for (const { opportunity, match } of scored) {
+    matchScores[opportunity.id] = match;
+  }
+
+  return {
+    hasProfile: true,
+    matchScores,
+    topPicks: scored.slice(0, 3),
+  };
+}
+
 // ---------------------------------------------------------------------------
-// Skeleton grid (shown via Suspense while OpportunityGrid loads)
+// Skeleton grid
 // ---------------------------------------------------------------------------
 
 function GridSkeleton() {
@@ -87,7 +132,11 @@ export default async function FeedPage({
 }) {
   const params = await searchParams;
   const { gridFilters, sidebarFilters, sort } = parseFilters(params);
-  const totalCount = await getOpportunityCount(gridFilters);
+
+  const [totalCount, { hasProfile, matchScores, topPicks }] = await Promise.all([
+    getOpportunityCount(gridFilters),
+    getMatchData(TEST_USER_ID),
+  ]);
 
   return (
     <div className="min-h-screen bg-[#0A0A0B]">
@@ -100,8 +149,16 @@ export default async function FeedPage({
           </p>
         </div>
 
+        {/* Profile banner — only shown when no profile exists */}
+        {!hasProfile && <ProfileBanner />}
+
+        {/* Top Picks — only shown when a profile exists */}
+        {hasProfile && topPicks.length > 0 && (
+          <TopPicksSection picks={topPicks} />
+        )}
+
         <div className="flex gap-8">
-          {/* Desktop sidebar — wrapped in Suspense because FeedSidebar uses useSearchParams */}
+          {/* Desktop sidebar */}
           <Suspense fallback={<div className="hidden lg:block w-64 shrink-0" />}>
             <FeedSidebar />
           </Suspense>
@@ -119,7 +176,10 @@ export default async function FeedPage({
 
             {/* Opportunity grid */}
             <Suspense fallback={<GridSkeleton />}>
-              <OpportunityGrid filters={gridFilters} />
+              <OpportunityGrid
+                filters={gridFilters}
+                matchScores={matchScores ?? undefined}
+              />
             </Suspense>
           </div>
         </div>

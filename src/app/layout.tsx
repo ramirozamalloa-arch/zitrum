@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
+import { Toaster } from "sonner";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 
@@ -26,6 +27,12 @@ export default function RootLayout({
         <Header />
         <main className="flex-1">{children}</main>
         <Footer />
+        <Toaster
+          position="bottom-right"
+          toastOptions={{
+            style: { background: "#1A1A1D", border: "1px solid #27272A", color: "#fff" },
+          }}
+        />
       </body>
     </html>
   );

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import type { AssetType, RiskLevel, Prisma } from "@prisma/client";
 import { OpportunityCard } from "@/components/feed/opportunity-card";
 import { SlidersHorizontal } from "lucide-react";
+import type { MatchResult } from "@/lib/matching/engine";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -50,7 +51,12 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
 // OpportunityGrid — Server Component
 // ---------------------------------------------------------------------------
 
-export async function OpportunityGrid({ filters }: { filters: GridFilters }) {
+interface OpportunityGridProps {
+  filters: GridFilters;
+  matchScores?: Record<string, MatchResult>;
+}
+
+export async function OpportunityGrid({ filters, matchScores }: OpportunityGridProps) {
   const {
     assetTypes,
     riskLevels,
@@ -110,9 +116,17 @@ export async function OpportunityGrid({ filters }: { filters: GridFilters }) {
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {opportunities.map((opp) => (
-        <OpportunityCard key={opp.id} opportunity={opp} />
-      ))}
+      {opportunities.map((opp) => {
+        const match = matchScores?.[opp.id];
+        return (
+          <OpportunityCard
+            key={opp.id}
+            opportunity={opp}
+            matchScore={match?.score}
+            matchBreakdown={match?.breakdown}
+          />
+        );
+      })}
     </div>
   );
 }

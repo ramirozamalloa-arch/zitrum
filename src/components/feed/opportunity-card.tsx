@@ -5,6 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { MapPin, Bookmark, TrendingUp, DollarSign, ExternalLink } from "lucide-react";
 import type { Opportunity, Platform } from "@prisma/client";
+import { MatchBadge } from "@/components/feed/match-badge";
+import type { MatchResult } from "@/lib/matching/engine";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,7 +63,13 @@ function formatReturn(min: number | null, max: number | null): string {
 // OpportunityCard
 // ---------------------------------------------------------------------------
 
-export function OpportunityCard({ opportunity }: { opportunity: OpportunityWithPlatform }) {
+interface OpportunityCardProps {
+  opportunity: OpportunityWithPlatform;
+  matchScore?: number;
+  matchBreakdown?: MatchResult["breakdown"];
+}
+
+export function OpportunityCard({ opportunity, matchScore, matchBreakdown }: OpportunityCardProps) {
   const [bookmarked, setBookmarked] = useState(false);
 
   const assetCfg = ASSET_TYPE_CONFIG[opportunity.assetType] ?? {
@@ -127,6 +135,11 @@ export function OpportunityCard({ opportunity }: { opportunity: OpportunityWithP
           </div>
           <span className="text-xs text-[#A1A1AA]">{opportunity.platform.name}</span>
         </div>
+
+        {/* Match badge (only when a score is provided) */}
+        {matchScore !== undefined && matchBreakdown !== undefined && (
+          <MatchBadge score={matchScore} breakdown={matchBreakdown} />
+        )}
 
         {/* Title */}
         <h3 className="text-sm font-semibold text-white leading-snug line-clamp-2">
