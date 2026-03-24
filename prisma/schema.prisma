@@ -1,13 +1,128 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
-
 generator client {
-  provider = "prisma-client"
-  output   = "../src/generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum AssetType {
+  REAL_ESTATE
+  STARTUP_EQUITY
+  PRIVATE_CREDIT
+  ART_COLLECTIBLES
+  FARMLAND
+  PRIVATE_EQUITY
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum OpportunityStatus {
+  ACTIVE
+  CLOSED
+  COMING_SOON
+}
+
+enum InvestmentHorizon {
+  SHORT
+  MEDIUM
+  LONG
+}
+
+enum ExperienceLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+model Platform {
+  id                 String        @id @default(uuid())
+  name               String
+  slug               String        @unique
+  website            String
+  logoUrl            String?
+  description        String?
+  assetTypes         String[]
+  minInvestment      Float?
+  countriesAvailable String[]
+  affiliateUrl       String
+  isActive           Boolean       @default(true)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  opportunities      Opportunity[]
+}
+
+model Opportunity {
+  id                String            @id @default(uuid())
+  platformId        String
+  platform          Platform          @relation(fields: [platformId], references: [id])
+  title             String
+  description       String?
+  assetType         AssetType
+  minInvestment     Float
+  expectedReturnMin Float?
+  expectedReturnMax Float?
+  currency          String            @default("USD")
+  locationCountry   String?
+  locationCity      String?
+  riskLevel         RiskLevel
+  status            OpportunityStatus
+  externalUrl       String            @unique
+  imageUrl          String?
+  scrapedAt         DateTime          @default(now())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  savedBy           SavedOpportunity[]
+
+  @@index([assetType])
+  @@index([status])
+  @@index([platformId])
+}
+
+model InvestorProfile {
+  id                   String             @id @default(uuid())
+  userId               String             @unique
+  displayName          String?
+  ageRange             String?
+  country              String?
+  availableCapitalMin  Float?
+  availableCapitalMax  Float?
+  riskTolerance        Int?
+  investmentHorizon    InvestmentHorizon?
+  interestedAssetTypes String[]
+  interestedSectors    String[]
+  interestedRegions    String[]
+  experienceLevel      ExperienceLevel?
+  esgPreference        Boolean            @default(false)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  savedOpportunities   SavedOpportunity[]
+
+  @@index([userId])
+}
+
+model SavedOpportunity {
+  id              String          @id @default(uuid())
+  userId          String
+  opportunityId   String
+  opportunity     Opportunity     @relation(fields: [opportunityId], references: [id])
+  investorProfile InvestorProfile @relation(fields: [userId], references: [userId])
+  createdAt       DateTime        @default(now())
+
+  @@unique([userId, opportunityId])
 }
