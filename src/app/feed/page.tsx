@@ -113,7 +113,7 @@ async function getSavedIds(userId: string | null): Promise<Set<string>> {
     where: { userId },
     select: { opportunityId: true },
   });
-  return new Set(saved.map((s) => s.opportunityId));
+  return new Set((saved as Array<{ opportunityId: string }>).map(s => s.opportunityId));
 }
 
 // ---------------------------------------------------------------------------

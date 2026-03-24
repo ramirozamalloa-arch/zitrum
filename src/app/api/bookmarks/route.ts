@@ -31,7 +31,8 @@ export async function GET() {
       where: { userId },
       select: { opportunityId: true },
     });
-    return NextResponse.json({ savedIds: saved.map((s: { opportunityId: string }) => s.opportunityId) });
+    const savedIds = (saved as Array<{ opportunityId: string }>).map(s => s.opportunityId);
+    return NextResponse.json({ savedIds });
   } catch (error) {
     console.error("[GET /api/bookmarks]", error);
     return NextResponse.json({ error: "Failed to fetch bookmarks." }, { status: 500 });
