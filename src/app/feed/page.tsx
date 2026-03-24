@@ -12,9 +12,7 @@ import type { FeedFilters } from "@/components/layout/sidebar";
 import { calculateMatchScore } from "@/lib/matching/engine";
 import type { MatchResult } from "@/lib/matching/engine";
 import type { ScoredOpportunity } from "@/components/feed/top-picks-section";
-
-// Hardcoded test user — same as profile route
-const TEST_USER_ID = "test-user-00000000-0000-0000-0000-000000000001";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -74,11 +72,13 @@ async function getOpportunityCount(filters: GridFilters): Promise<number> {
  * Fetch profile + run matching engine for all active opportunities.
  * Returns null matchScores if the user has no profile yet.
  */
-async function getMatchData(userId: string): Promise<{
+async function getMatchData(userId: string | null): Promise<{
   hasProfile: boolean;
   matchScores: Record<string, MatchResult> | null;
   topPicks: ScoredOpportunity[];
 }> {
+  if (!userId) return { hasProfile: false, matchScores: null, topPicks: [] };
+
   const [profile, opportunities] = await Promise.all([
     prisma.investorProfile.findUnique({ where: { userId } }),
     prisma.opportunity.findMany({
@@ -107,6 +107,15 @@ async function getMatchData(userId: string): Promise<{
   };
 }
 
+async function getSavedIds(userId: string | null): Promise<Set<string>> {
+  if (!userId) return new Set();
+  const saved = await prisma.savedOpportunity.findMany({
+    where: { userId },
+    select: { opportunityId: true },
+  });
+  return new Set(saved.map((s) => s.opportunityId));
+}
+
 // ---------------------------------------------------------------------------
 // Skeleton grid
 // ---------------------------------------------------------------------------
@@ -133,9 +142,14 @@ export default async function FeedPage({
   const params = await searchParams;
   const { gridFilters, sidebarFilters, sort } = parseFilters(params);
 
-  const [totalCount, { hasProfile, matchScores, topPicks }] = await Promise.all([
+  const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const userId = user?.id ?? null;
+
+  const [totalCount, { hasProfile, matchScores, topPicks }, savedIds] = await Promise.all([
     getOpportunityCount(gridFilters),
-    getMatchData(TEST_USER_ID),
+    getMatchData(userId),
+    getSavedIds(userId),
   ]);
 
   return (
@@ -179,6 +193,7 @@ export default async function FeedPage({
               <OpportunityGrid
                 filters={gridFilters}
                 matchScores={matchScores ?? undefined}
+                savedIds={savedIds}
               />
             </Suspense>
           </div>

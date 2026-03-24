@@ -54,9 +54,10 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
 interface OpportunityGridProps {
   filters: GridFilters;
   matchScores?: Record<string, MatchResult>;
+  savedIds?: Set<string>;
 }
 
-export async function OpportunityGrid({ filters, matchScores }: OpportunityGridProps) {
+export async function OpportunityGrid({ filters, matchScores, savedIds }: OpportunityGridProps) {
   const {
     assetTypes,
     riskLevels,
@@ -124,6 +125,7 @@ export async function OpportunityGrid({ filters, matchScores }: OpportunityGridP
             opportunity={opp}
             matchScore={match?.score}
             matchBreakdown={match?.breakdown}
+            initialSaved={savedIds?.has(opp.id)}
           />
         );
       })}

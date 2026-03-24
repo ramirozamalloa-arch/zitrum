@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Menu, X, User, LogOut, Settings } from "lucide-react";
+import { Menu, X, User, LogOut, Bookmark } from "lucide-react";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
 import { createBrowserSupabaseClient } from "@/lib/supabase";
 import {
@@ -46,7 +46,8 @@ export function Header() {
     router.refresh();
   }
 
-  const userInitials = user?.email?.slice(0, 2).toUpperCase() ?? "?";
+  const displayName = user?.user_metadata?.full_name as string | undefined;
+  const userInitials = (displayName ?? user?.email ?? "?").slice(0, 2).toUpperCase();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b border-[#27272A] bg-[#0A0A0B]/90 backdrop-blur-sm">
@@ -92,7 +93,12 @@ export function Header() {
                 align="end"
                 className="w-48 bg-[#1A1A1D] border-[#27272A] text-white"
               >
-                <div className="px-2 py-1.5 text-xs text-[#A1A1AA] truncate">{user.email}</div>
+                <div className="px-2 py-1.5">
+                  {displayName && (
+                    <p className="text-xs font-medium text-white truncate">{displayName}</p>
+                  )}
+                  <p className="text-xs text-[#A1A1AA] truncate">{user.email}</p>
+                </div>
                 <DropdownMenuSeparator className="bg-[#27272A]" />
                 <DropdownMenuItem className="hover:bg-[#27272A] cursor-pointer">
                   <Link href="/profile" className="flex items-center w-full">
@@ -101,9 +107,9 @@ export function Header() {
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem className="hover:bg-[#27272A] cursor-pointer">
-                  <Link href="/onboarding" className="flex items-center w-full">
-                    <Settings className="mr-2 h-4 w-4" />
-                    Preferences
+                  <Link href="/saved" className="flex items-center w-full">
+                    <Bookmark className="mr-2 h-4 w-4" />
+                    Saved
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-[#27272A]" />

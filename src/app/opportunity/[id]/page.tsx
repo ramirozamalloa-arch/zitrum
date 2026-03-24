@@ -13,6 +13,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { OpportunityCard } from "@/components/feed/opportunity-card";
 import { BookmarkButton } from "@/app/opportunity/[id]/bookmark-button";
 
@@ -85,6 +86,15 @@ export default async function OpportunityPage({
   });
 
   if (!opportunity) notFound();
+
+  // Check if current user has saved this opportunity
+  const supabase = await createServerSupabaseClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const initialSaved = user
+    ? !!(await prisma.savedOpportunity.findUnique({
+        where: { userId_opportunityId: { userId: user.id, opportunityId: id } },
+      }))
+    : false;
 
   const assetCfg = ASSET_TYPE_CONFIG[opportunity.assetType] ?? {
     label: opportunity.assetType, bg: "bg-zinc-500/20", text: "text-zinc-400", border: "border-zinc-500/30",
@@ -261,7 +271,7 @@ export default async function OpportunityPage({
               Invest on {opportunity.platform.name}
               <ExternalLink className="h-4 w-4" />
             </a>
-            <BookmarkButton opportunityId={opportunity.id} />
+            <BookmarkButton opportunityId={opportunity.id} initialSaved={initialSaved} />
           </div>
           <p className="mt-3 text-xs text-[#52525B]">
             You will be redirected to {opportunity.platform.name} to complete your investment.

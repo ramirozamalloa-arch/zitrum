@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { MapPin, Bookmark, TrendingUp, DollarSign, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
 import type { Opportunity, Platform } from "@prisma/client";
 import { MatchBadge } from "@/components/feed/match-badge";
 import type { MatchResult } from "@/lib/matching/engine";
@@ -67,10 +68,41 @@ interface OpportunityCardProps {
   opportunity: OpportunityWithPlatform;
   matchScore?: number;
   matchBreakdown?: MatchResult["breakdown"];
+  initialSaved?: boolean;
 }
 
-export function OpportunityCard({ opportunity, matchScore, matchBreakdown }: OpportunityCardProps) {
-  const [bookmarked, setBookmarked] = useState(false);
+export function OpportunityCard({
+  opportunity,
+  matchScore,
+  matchBreakdown,
+  initialSaved = false,
+}: OpportunityCardProps) {
+  const [bookmarked, setBookmarked] = useState(initialSaved);
+  const [bookmarkPending, setBookmarkPending] = useState(false);
+
+  async function handleBookmark() {
+    if (bookmarkPending) return;
+    setBookmarkPending(true);
+    const next = !bookmarked;
+    setBookmarked(next); // optimistic
+
+    try {
+      const res = await fetch("/api/bookmarks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: opportunity.id }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const data = await res.json() as { saved: boolean };
+      setBookmarked(data.saved);
+      toast(data.saved ? "Saved to your list" : "Removed from saved");
+    } catch {
+      setBookmarked(!next); // revert
+      toast.error("Could not update bookmark. Try again.");
+    } finally {
+      setBookmarkPending(false);
+    }
+  }
 
   const assetCfg = ASSET_TYPE_CONFIG[opportunity.assetType] ?? {
     label: opportunity.assetType,
@@ -187,9 +219,10 @@ export function OpportunityCard({ opportunity, matchScore, matchBreakdown }: Opp
           </Link>
 
           <button
-            onClick={() => setBookmarked((b) => !b)}
+            onClick={handleBookmark}
+            disabled={bookmarkPending}
             aria-label={bookmarked ? "Remove bookmark" : "Bookmark opportunity"}
-            className={`p-1.5 rounded-md transition-colors ${
+            className={`p-1.5 rounded-md transition-colors disabled:opacity-50 ${
               bookmarked
                 ? "text-[#D4A853] bg-[#D4A853]/10"
                 : "text-[#52525B] hover:text-[#A1A1AA] hover:bg-[#27272A]"
