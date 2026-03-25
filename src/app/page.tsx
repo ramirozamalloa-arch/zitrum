@@ -147,10 +147,19 @@ const FAQ_ITEMS = [
 // ---------------------------------------------------------------------------
 
 export default async function HomePage() {
-  const [opportunityCount, platformCount] = await Promise.all([
-    prisma.opportunity.count({ where: { status: "ACTIVE" } }),
-    prisma.platform.count({ where: { isActive: true } }),
-  ]);
+  let opportunityCount = 9;
+  let platformCount = 3;
+
+  try {
+    const [opps, plats] = await Promise.all([
+      prisma.opportunity.count({ where: { status: "ACTIVE" } }),
+      prisma.platform.count({ where: { isActive: true } }),
+    ]);
+    opportunityCount = opps;
+    platformCount = plats;
+  } catch {
+    // DB unreachable at build/render time — use fallback values
+  }
 
   return (
     <div className="bg-[#0A0A0B] text-white overflow-x-hidden">

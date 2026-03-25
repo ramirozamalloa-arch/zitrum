@@ -62,6 +62,14 @@ DATABASE_URL=your_postgres_connection_string
 
 You can find these values in your [Supabase project settings](https://supabase.com/dashboard).
 
+> **Vercel / serverless deployments:** You must use the **Supabase connection pooler URL** (not the direct connection). The direct URL (port 5432) does not work in serverless environments. Use the pooler URL from Supabase → Project Settings → Database → Connection string → **Transaction pooler**:
+>
+> ```
+> postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres?pgbouncer=true
+> ```
+>
+> Set this as `DATABASE_URL` in your Vercel environment variables.
+
 ### 4. Generate Prisma client and push schema
 
 ```bash
