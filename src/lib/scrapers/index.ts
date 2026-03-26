@@ -1,5 +1,6 @@
 import { scrapeRealT } from "./realt";
 import { scrapeLofty } from "./lofty";
+import { scrapeRepublic } from "./republic";
 
 export interface ScraperResult {
   platform: string;
@@ -10,7 +11,7 @@ export interface ScraperResult {
 }
 
 // Ordered list of scrapers — runs sequentially to respect rate limits
-const SCRAPERS = [scrapeRealT, scrapeLofty];
+const SCRAPERS = [scrapeRealT, scrapeLofty, scrapeRepublic];
 
 /**
  * Run all scrapers sequentially.
