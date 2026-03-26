@@ -1,3 +1,7 @@
+import { execSync } from "child_process";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { AssetType, RiskLevel, OpportunityStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
@@ -5,44 +9,20 @@ import { prisma } from "@/lib/prisma";
 // Republic scraper
 //
 // Endpoint: POST https://republic.com/v1/offerings/search
-// Auth:     None (Cloudflare cookie challenge — works from Vercel/US IPs,
-//           may block non-US or datacenter IPs locally)
+// Auth:     None, but protected by Cloudflare bot detection.
 //
-// Strategy: fetch homepage first to establish session cookies, then POST
-// to the search endpoint with pagination (limit/offset).
+// Node.js fetch (undici) triggers Cloudflare 403 — curl passes the TLS
+// fingerprint check. Strategy:
+//   1. curl GET /companies  →  save cookies to a temp jar file
+//   2. curl POST /v1/offerings/search with cookie jar  →  JSON response
+//   3. Paginate until results < PAGE_SIZE
 // ---------------------------------------------------------------------------
 
 const REPUBLIC_BASE = "https://republic.com";
 const REPUBLIC_API = "https://republic.com/v1/offerings/search";
 const PAGE_SIZE = 24;
-
-const BROWSER_HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept-Language": "en-US,en;q=0.9",
-};
-
-// ---------------------------------------------------------------------------
-// Session cookie helper — Cloudflare requires a valid session
-// ---------------------------------------------------------------------------
-
-async function getSessionCookie(): Promise<string> {
-  const res = await fetch(`${REPUBLIC_BASE}/companies`, {
-    headers: {
-      ...BROWSER_HEADERS,
-      Accept: "text/html,application/xhtml+xml",
-    },
-    redirect: "follow",
-  });
-  const setCookie = res.headers.get("set-cookie");
-  if (!setCookie) return "";
-  // Extract all cookie key=value pairs (strip attributes like Path, Expires, etc.)
-  return setCookie
-    .split(",")
-    .map((c) => c.split(";")[0].trim())
-    .filter(Boolean)
-    .join("; ");
-}
+const UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 // ---------------------------------------------------------------------------
 // Republic API response types
@@ -203,62 +183,68 @@ function isActive(o: RepublicOffering): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Paginated fetch
+// Paginated fetch via curl (passes Cloudflare TLS fingerprint check)
 // ---------------------------------------------------------------------------
 
-async function fetchAllOfferings(cookie: string): Promise<RepublicOffering[]> {
+function curlPost(url: string, body: string, cookieJar: string): string {
+  // Shell-safe: body is controlled JSON, no user input
+  const escaped = body.replace(/'/g, "'\\''");
+  const cmd = [
+    "curl", "-s", "--max-time", "30",
+    "-c", cookieJar, "-b", cookieJar,  // read+write cookie jar
+    "-X", "POST",
+    "-H", `'User-Agent: ${UA}'`,
+    "-H", "'Content-Type: application/json'",
+    "-H", "'Accept: application/json, */*'",
+    "-H", `'Origin: ${REPUBLIC_BASE}'`,
+    "-H", `'Referer: ${REPUBLIC_BASE}/companies'`,
+    "-H", "'Accept-Language: en-US,en;q=0.9'",
+    "--data", `'${escaped}'`,
+    `'${url}'`,
+  ].join(" ");
+  return execSync(cmd, { encoding: "utf8", timeout: 35_000 });
+}
+
+async function fetchAllOfferings(cookieJar: string): Promise<RepublicOffering[]> {
   const all: RepublicOffering[] = [];
   let offset = 0;
-  let firstItem: unknown = null;
 
   while (true) {
-    const res = await fetch(REPUBLIC_API, {
-      method: "POST",
-      headers: {
-        ...BROWSER_HEADERS,
-        "Content-Type": "application/json",
-        Accept: "application/json, */*",
-        Origin: REPUBLIC_BASE,
-        Referer: `${REPUBLIC_BASE}/companies`,
-        ...(cookie ? { Cookie: cookie } : {}),
-      },
-      body: JSON.stringify({
-        include: "tags,issuer_profile,security,flexible_deal_terms,investment_badge",
-        short_offering: true,
-        filter: "show_on_companies_page",
-        limit: PAGE_SIZE,
-        offset,
-        sort: "trending",
-      }),
+    const body = JSON.stringify({
+      include: "tags,issuer_profile,security,flexible_deal_terms,investment_badge",
+      short_offering: true,
+      filter: "show_on_companies_page",
+      limit: PAGE_SIZE,
+      offset,
+      sort: "trending",
     });
 
-    if (!res.ok) {
-      throw new Error(`Republic API responded ${res.status} at offset ${offset}`);
+    const raw = curlPost(REPUBLIC_API, body, cookieJar);
+    let json: RepublicSearchResponse;
+    try {
+      json = JSON.parse(raw) as RepublicSearchResponse;
+    } catch {
+      throw new Error(`Non-JSON response at offset ${offset}: ${raw.slice(0, 300)}`);
     }
 
-    const json = (await res.json()) as RepublicSearchResponse;
-    const page: RepublicOffering[] =
-      json.offerings ?? json.data ?? json.results ?? [];
+    const page: RepublicOffering[] = json.offerings ?? json.data ?? json.results ?? [];
 
-    // Log the first item on the first page so field names can be verified
+    // Log the first item on the first page so field names can be verified in production logs
     if (offset === 0 && page.length > 0) {
-      firstItem = page[0];
       console.log("[Republic] First item field names:", Object.keys(page[0]));
       console.log("[Republic] First item sample:", JSON.stringify(page[0], null, 2).slice(0, 1000));
     }
 
     all.push(...page);
-    console.log(`[Republic] Page offset=${offset}: got ${page.length} offerings (total so far: ${all.length})`);
+    console.log(`[Republic] offset=${offset}: ${page.length} items (total: ${all.length})`);
 
-    // Stop when we get fewer results than the page size
     if (page.length < PAGE_SIZE) break;
     offset += PAGE_SIZE;
 
-    // Respect rate limits
+    // Respect rate limits between pages
     await new Promise((r) => setTimeout(r, 2000));
   }
 
-  void firstItem; // logged above
   return all;
 }
 
@@ -294,24 +280,36 @@ export async function scrapeRepublic(): Promise<{
     },
   });
 
-  // Establish session cookie to pass Cloudflare check
-  let cookie = "";
+  // Create a temp directory for the cookie jar (cleaned up after scrape)
+  const tmpDir = mkdtempSync(join(tmpdir(), "republic-"));
+  const cookieJar = join(tmpDir, "cookies.txt");
+
+  // Warm up the cookie jar — curl GET /companies so Cloudflare sets session cookies
   try {
-    cookie = await getSessionCookie();
-    console.log(`[Republic] Session cookie obtained (${cookie.length} chars)`);
+    execSync(
+      `curl -s --max-time 15 -c '${cookieJar}' -b '${cookieJar}' ` +
+        `-H 'User-Agent: ${UA}' ` +
+        `-H 'Accept: text/html,application/xhtml+xml' ` +
+        `'${REPUBLIC_BASE}/companies' -o /dev/null`,
+      { timeout: 20_000 }
+    );
+    console.log("[Republic] Session cookie jar initialised");
   } catch (err) {
-    console.warn(`[Republic] Could not get session cookie: ${String(err)} — trying without`);
+    console.warn(`[Republic] Cookie warm-up failed: ${String(err)} — proceeding anyway`);
   }
 
   // Fetch all offerings with pagination
   let offerings: RepublicOffering[];
   try {
-    offerings = await fetchAllOfferings(cookie);
+    offerings = await fetchAllOfferings(cookieJar);
     console.log(`[Republic] Fetched ${offerings.length} total offerings`);
   } catch (err) {
     const error = `Failed to fetch Republic API: ${String(err)}`;
     console.error(`[Republic] ${error}`);
+    rmSync(tmpDir, { recursive: true, force: true });
     return { platform: "Republic", total: 0, new: 0, updated: 0, error };
+  } finally {
+    rmSync(tmpDir, { recursive: true, force: true });
   }
 
   // Filter to active only
