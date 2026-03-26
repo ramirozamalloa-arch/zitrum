@@ -1,3 +1,4 @@
+import { execSync } from "child_process";
 import { AssetType, RiskLevel, OpportunityStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
@@ -113,16 +114,15 @@ export async function scrapeRealT(): Promise<{
     },
   });
 
-  // Fetch all tokens from the API
+  // Fetch all tokens via curl — api.realtoken.community is behind Cloudflare,
+  // which blocks Node.js fetch (undici) on Vercel but passes curl's TLS fingerprint.
   let tokens: RealTokenApiEntry[];
   try {
-    const response = await fetch(REALT_API_URL, {
-      headers: { "User-Agent": "ZITRUM/1.0 (marketplace aggregator)" },
-    });
-    if (!response.ok) {
-      throw new Error(`API responded with status ${response.status}`);
-    }
-    tokens = (await response.json()) as RealTokenApiEntry[];
+    const raw = execSync(
+      `curl -s --max-time 30 -H 'User-Agent: ZITRUM/1.0 (marketplace aggregator)' '${REALT_API_URL}'`,
+      { encoding: "utf8", timeout: 35_000 }
+    );
+    tokens = JSON.parse(raw) as RealTokenApiEntry[];
   } catch (err) {
     const error = `Failed to fetch RealT API: ${String(err)}`;
     console.error(`[RealT] ${error}`);
