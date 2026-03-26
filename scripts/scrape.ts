@@ -4,9 +4,21 @@
  * Runs all platform scrapers and prints a summary.
  */
 
-import { runAllScrapers } from "../src/lib/scrapers";
+// Load .env.local synchronously BEFORE any scrapers are imported.
+// Static imports are hoisted, so prisma.ts (which creates pg.Pool at init time)
+// would run before dotenv if we used a top-level import for the scrapers.
+// Dynamic import() below solves this — it runs after config() has executed.
+import { config } from "dotenv";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
+
+const dir = dirname(fileURLToPath(import.meta.url));
+config({ path: resolve(dir, "../.env.local"), quiet: true });
 
 async function main() {
+  // Dynamic import ensures prisma.ts initialises AFTER DATABASE_URL is set
+  const { runAllScrapers } = await import("../src/lib/scrapers/index.js");
+
   console.log("Starting ZITRUM scraper run...\n");
   const results = await runAllScrapers();
 
